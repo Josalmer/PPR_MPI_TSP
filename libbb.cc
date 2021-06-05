@@ -24,18 +24,18 @@ const int BLANCO = 0;
 const int NEGRO = 1;
 
 // Comunicadores que usar� cada proceso
-Intracomm comunicadorCarga; // Para la distribuci�n de la carga
-Intracomm comunicadorCota;  // Para la difusi�n de una nueva cota superior detectada
+extern MPI_Comm comunicadorCarga; // Para la distribuci�n de la carga
+extern MPI_Comm comunicadorCota;  // Para la difusi�n de una nueva cota superior detectada
 
 // Variables que indican el estado de cada proceso
-extern int rank;           // Identificador del proceso dentro de cada comunicador (coincide en ambos)
+extern int idproc;         // Identificador del proceso dentro de cada comunicador (coincide en ambos)
 extern int size;           // N�mero de procesos que est�n resolviendo el problema
 int estado;                // Estado del proceso {ACTIVO, PASIVO}
 int color;                 // Color del proceso {BLANCO,NEGRO}
 int color_token;           // Color del token la �ltima vez que estaba en poder del proceso
-bool token_presente;       // Indica si el proceso posee el token
-int prev;                  // Identificador del anterior proceso
-int next;                  // Identificador del siguiente proceso
+extern bool token_presente;       // Indica si el proceso posee el token
+extern int anterior;              // Identificador del anterior proceso
+extern int siguiente;             // Identificador del siguiente proceso
 bool difundir_cs_local;    // Indica si el proceso puede difundir su cota inferior local
 bool pendiente_retorno_cs; // Indica si el proceso est� esperando a recibir la cota inferior de otro proceso
 
@@ -49,9 +49,10 @@ void loadBalance(tPila &pila, bool &end, tNodo &solucion) {
     int idRequester, count;
     MPI_Status msgStatus;
     color = BLANCO;
+    int nNodos = 2 * NCIUDADES;
 
     if (pila.vacia()) { // El proceso no tiene trabajo: pide a otros procesos
-        MPI_Send(&rank, 1, MPI_INT, next, PETICION, comunicadorCarga);
+        MPI_Send(&idproc, 1, MPI_INT, siguiente, PETICION, comunicadorCarga);
 
         while (pila.vacia() && !end) {
             MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, comunicadorCarga, &msgStatus);
@@ -59,17 +60,17 @@ void loadBalance(tPila &pila, bool &end, tNodo &solucion) {
 
             switch (msgStatus.MPI_TAG) {
             case PETICION: // Peticion de trabajo
-                MPI_Recv(&idRequester, 1, MPI_INT, prev, PETICION, comunicadorCarga, &msgStatus);
-                MPI_Send(&idRequester, 1, MPI_INT, next, PETICION, comunicadorCarga);
-                if (idRequester == rank) {
+                MPI_Recv(&idRequester, 1, MPI_INT, anterior, PETICION, comunicadorCarga, &msgStatus);
+                MPI_Send(&idRequester, 1, MPI_INT, siguiente, PETICION, comunicadorCarga);
+                if (idRequester == idproc) {
                     estado = PASIVO;
                     if (token_presente) {
-                        if (rank == P0) {
+                        if (idproc == 0) {
                             color_token = BLANCO;
                         } else {
                             color_token = color;
                         }
-                        MPI_Send(NULL, 0, MPI_INT, prev, TOKEN, comunicadorCarga);
+                        MPI_Send(NULL, 0, MPI_INT, anterior, TOKEN, comunicadorCarga);
                         token_presente = false;
                         color = BLANCO;
                     }
@@ -81,35 +82,35 @@ void loadBalance(tPila &pila, bool &end, tNodo &solucion) {
                 estado = ACTIVO;
                 break;
             case TOKEN: // Token de control de fin
-                MPI_Recv(NULL, 0, MPI_INT, next, TOKEN, comunicadorCarga, &msgStatus);
+                MPI_Recv(NULL, 0, MPI_INT, siguiente, TOKEN, comunicadorCarga, &msgStatus);
                 token_presente = true;
                 if (estado == PASIVO) {
-                    if (rank == P0 && color == BLANCO && color_token == BLANCO) {
+                    if (idproc == 0 && color == BLANCO && color_token == BLANCO) {
                         end = true;
-                        MPI_Send(solucion.datos, solucion.size(), MPI_INT, next, FIN, comunicadorCarga);
-                        MPI_Recv(candidato.datos, candidato.size(), MPI_INT, prev, FIN, comunicadorCarga, &msgStatus);
+                        MPI_Send(solucion.datos, nNodos, MPI_INT, siguiente, FIN, comunicadorCarga);
+                        MPI_Recv(candidato.datos, nNodos, MPI_INT, anterior, FIN, comunicadorCarga, &msgStatus);
                         if (candidato.ci() < solucion.ci()) {
                             CopiaNodo(&candidato, &solucion);
                         }
                     }
                 } else {
-                    if (rank == P0) {
+                    if (idproc == 0) {
                         color_token = BLANCO;
                     } else {
                         color_token = color;
                     }
-                    MPI_Send(NULL, 0, MPI_INT, prev, TOKEN, comunicadorCarga);
+                    MPI_Send(NULL, 0, MPI_INT, anterior, TOKEN, comunicadorCarga);
                     token_presente = false;
                     color = BLANCO;
                 }
                 break;
             case FIN: // Fin detectado
-                MPI_Recv(candidato.datos, candidato.size(), MPI_INT, prev, FIN, comunicadorCarga, &msgStatus);
+                MPI_Recv(candidato.datos, nNodos, MPI_INT, anterior, FIN, comunicadorCarga, &msgStatus);
                 end = true;
                 if (candidato.ci() < solucion.ci()) {
                     CopiaNodo(&candidato, &solucion);
                 }
-                MPI_Send(solucion.datos, solucion.size(), MPI_INT, next, FIN, comunicadorCarga);
+                MPI_Send(solucion.datos, nNodos, MPI_INT, siguiente, FIN, comunicadorCarga);
                 break;
             }
         }
@@ -122,16 +123,16 @@ void loadBalance(tPila &pila, bool &end, tNodo &solucion) {
         while (flag > 0) { // atiende peticiones mientras haya mensajes
             switch (msgStatus.MPI_TAG) {
             case PETICION: // Peticion de trabajo
-                MPI_Recv(&idRequester, 1, MPI_INT, prev, PETICION, comunicadorCarga, &msgStatus);
+                MPI_Recv(&idRequester, 1, MPI_INT, anterior, PETICION, comunicadorCarga, &msgStatus);
                 if (pila.tamanio() >= 2) {
                     tPila pila_mitad;
                     pila.divide(pila_mitad);
                     MPI_Send(pila_mitad.nodos, pila_mitad.tope, MPI_INT, idRequester, NODOS, comunicadorCarga);
-                    if (rank < idRequester) {
+                    if (idproc < idRequester) {
                         color = NEGRO;
                     }
                 } else {
-                    MPI_Send(&idRequester, 1, MPI_INT, next, PETICION, comunicadorCarga);
+                    MPI_Send(&idRequester, 1, MPI_INT, siguiente, PETICION, comunicadorCarga);
                 }
                 break;
             case TOKEN: // Token de control de fin
@@ -152,33 +153,33 @@ void uBroadcast(int &U, bool &nueva_U) {
     int receivedU, flag, idRequester;
 
     if (difundir_cs_local && !pendiente_retorno_cs) {
-        MPI_Send(&U, 1, MPI_INT, next, rank, comunicadorCota);
+        MPI_Send(&U, 1, MPI_INT, siguiente, idproc, comunicadorCota);
         pendiente_retorno_cs = true;
         difundir_cs_local = false;
     }
 
-    MPI_Iprobe(prev, MPI_ANY_TAG, comunicadorCota, &flag, &msgstatus);
+    MPI_Iprobe(anterior, MPI_ANY_TAG, comunicadorCota, &flag, &msgstatus);
     idRequester = msgstatus.MPI_TAG;
 
     while (flag > 0) {
-        MPI_Recv(&receivedU, 1, MPI_INT, prev, idRequester, comunicadorCota, &msgstatus);
+        MPI_Recv(&receivedU, 1, MPI_INT, anterior, idRequester, comunicadorCota, &msgstatus);
 
         if (receivedU < U) {
             U = receivedU;
             nueva_U = true;
         }
 
-        if (idRequester == rank && difundir_cs_local) {
-            MPI_Send(&U, 1, MPI_INT, next, rank, comunicadorCota);
+        if (idRequester == idproc && difundir_cs_local) {
+            MPI_Send(&U, 1, MPI_INT, siguiente, idproc, comunicadorCota);
             pendiente_retorno_cs = true;
             difundir_cs_local = false;
-        } else if (idRequester == rank && !difundir_cs_local) {
+        } else if (idRequester == idproc && !difundir_cs_local) {
             pendiente_retorno_cs = false;
         } else {
-            MPI_Send(&U, 1, MPI_INT, next, idRequester, comunicadorCota);
+            MPI_Send(&U, 1, MPI_INT, siguiente, idRequester, comunicadorCota);
         }
 
-        MPI_Iprobe(prev, MPI_ANY_TAG, comunicadorCota, &flag, &msgstatus);
+        MPI_Iprobe(anterior, MPI_ANY_TAG, comunicadorCota, &flag, &msgstatus);
         idRequester = msgstatus.MPI_TAG;
     }
 }

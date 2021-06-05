@@ -19,7 +19,9 @@ using namespace std;
 
 unsigned int NCIUDADES;
 bool DIFUSION;
-int rank, size;
+int idproc, size, siguiente, anterior;
+bool token_presente;
+MPI_Comm comunicadorCota, comunicadorCarga;
 
 main(int argc, char **argv) {
 	switch (argc) {
@@ -34,20 +36,18 @@ main(int argc, char **argv) {
 	}
 
 	// MPI init
-	int next, prev;
 	MPI::Init(argc, argv);
 	MPI_Comm_size(MPI_COMM_WORLD, &size);
-	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-	next = (rank + 1) % size;
-	prev = (rank - 1 + size) % size;
+	MPI_Comm_rank(MPI_COMM_WORLD, &idproc);
+	siguiente = (idproc + 1) % size;
+	anterior = (idproc - 1 + size) % size;
 
 	// Inicialización de comunicadores
-	MPI_Comm comunicadorCota, comunicadorCarga;
     MPI_Comm_split(MPI_COMM_WORLD, // a partir del comunicador global.
         0, // Todos van al mismo comunicador
-        rank, // indica el orden de asignacion de rango dentro de los nuevos comunicadores
+        idproc, // indica el orden de asignacion de rango dentro de los nuevos comunicadores
         &comunicadorCarga); // Referencia al nuevo comunicador creado.
-	MPI_Comm_split(MPI_COMM_WORLD, 1, rank, &comunicadorCota);
+	MPI_Comm_split(MPI_COMM_WORLD, 1, idproc, &comunicadorCota);
 
 	int **tsp0 = reservarMatrizCuadrada(NCIUDADES);
 	tNodo nodo,	  // nodo a explorar
@@ -63,16 +63,16 @@ main(int argc, char **argv) {
 	U = INFINITO;	 // inicializa cota superior
 	InicNodo(&nodo); // inicializa estructura nodo
 
-	if (rank == 0) { // Solo proceso 0
+	if (idproc == 0) { // Solo proceso 0
 		LeerMatriz(argv[2], tsp0); // lee matriz de fichero
 		token_presente = true;
 	}
-	MPI_Bcast(&tsp0[0][0], NCIUDADES * NCIUDADES, 0, MPI_COMM_WORLD);
+	MPI_Bcast(&tsp0[0][0], NCIUDADES * NCIUDADES, MPI_INT, 0, MPI_COMM_WORLD);
 	MPI_Barrier(MPI_COMM_WORLD);
 
 	double t = MPI::Wtime();
 
-	if (rank != 0) {
+	if (idproc != 0) {
 		loadBalance(pila, end, solucion);
 		if (!end) {
 			pila.pop(nodo);
@@ -136,12 +136,12 @@ main(int argc, char **argv) {
 	MPI_Comm_free(&comunicadorCota);
 	MPI_Comm_free(&comunicadorCarga);
 
-	cout << "----- Proceso " << rank << ", " << iteraciones << " iteraciones realizadas -----" << endl;
+	cout << "----- Proceso " << idproc << ", " << iteraciones << " iteraciones realizadas -----" << endl;
 	int itTotal;
 	MPI_Reduce(&iteraciones, &itTotal, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
 	MPI_Barrier(MPI_COMM_WORLD);
 
-	if (rank == 0) {
+	if (idproc == 0) {
 		printf("Solucion: \n");
 		EscribeNodo(&solucion);
 		cout << "Tiempo gastado= " << t << endl;
