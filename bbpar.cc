@@ -129,7 +129,6 @@ main(int argc, char **argv) {
 			pila.pop(nodo);
 		}
 
-		cout << "Proceso " << idproc << ", iteración " << iteraciones << endl;
 		iteraciones++;
 	}
 	MPI_Barrier(MPI_COMM_WORLD);

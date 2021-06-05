@@ -39,6 +39,8 @@ extern int siguiente;             // Identificador del siguiente proceso
 bool difundir_cs_local;    // Indica si el proceso puede difundir su cota inferior local
 bool pendiente_retorno_cs; // Indica si el proceso est� esperando a recibir la cota inferior de otro proceso
 
+bool DEPURACION = true;
+
 /* ********************************************************************* */
 /* *** Funciones para el algoritmo Paralelo con MPI *** */
 /* ********************************************************************* */
@@ -53,6 +55,7 @@ void loadBalance(tPila &pila, bool &end, tNodo &solucion) {
 
     if (pila.vacia()) { // El proceso no tiene trabajo: pide a otros procesos
         MPI_Send(&idproc, 1, MPI_INT, siguiente, PETICION, comunicadorCarga);
+        if (DEPURACION) { printf("Proceso[%d] pide trabajo a %d\n", idproc, siguiente); }
 
         while (pila.vacia() && !end) {
             MPI_Probe(MPI_ANY_SOURCE, MPI_ANY_TAG, comunicadorCarga, &msgStatus);
@@ -62,6 +65,7 @@ void loadBalance(tPila &pila, bool &end, tNodo &solucion) {
             case PETICION: // Peticion de trabajo
                 MPI_Recv(&idRequester, 1, MPI_INT, anterior, PETICION, comunicadorCarga, &msgStatus);
                 MPI_Send(&idRequester, 1, MPI_INT, siguiente, PETICION, comunicadorCarga);
+                if (DEPURACION) { printf("Proceso[%d] recibe peticion trabajo de %d y reenvia a %d\n", idproc, anterior, siguiente); }
                 if (idRequester == idproc) {
                     estado = PASIVO;
                     if (token_presente) {
@@ -77,11 +81,13 @@ void loadBalance(tPila &pila, bool &end, tNodo &solucion) {
                 }
                 break;
             case NODOS: // Resultado de una peticion de trabajo
+                if (DEPURACION) { printf("Proceso[%d] recibe trabajo de %d\n", idproc, msgStatus.MPI_SOURCE); }
                 MPI_Recv(pila.nodos, count, MPI_INT, msgStatus.MPI_SOURCE, NODOS, comunicadorCarga, &msgStatus);
                 pila.tope = count;
                 estado = ACTIVO;
                 break;
             case TOKEN: // Token de control de fin
+                if (DEPURACION) { printf("Proceso[%d] recibe token de fin de %d\n", idproc, siguiente); }
                 MPI_Recv(NULL, 0, MPI_INT, siguiente, TOKEN, comunicadorCarga, &msgStatus);
                 token_presente = true;
                 if (estado == PASIVO) {
@@ -105,6 +111,7 @@ void loadBalance(tPila &pila, bool &end, tNodo &solucion) {
                 }
                 break;
             case FIN: // Fin detectado
+                if (DEPURACION) { printf("Proceso[%d] recibe mensaje de fin de %d\n", idproc, anterior); }
                 MPI_Recv(candidato.datos, nNodos, MPI_INT, anterior, FIN, comunicadorCarga, &msgStatus);
                 end = true;
                 if (candidato.ci() < solucion.ci()) {
@@ -124,19 +131,23 @@ void loadBalance(tPila &pila, bool &end, tNodo &solucion) {
             switch (msgStatus.MPI_TAG) {
             case PETICION: // Peticion de trabajo
                 MPI_Recv(&idRequester, 1, MPI_INT, anterior, PETICION, comunicadorCarga, &msgStatus);
+                if (DEPURACION) { printf("Proceso[%d] recibe peticion trabajo de %d\n", idproc, idRequester); }
                 if (pila.tamanio() >= 2) {
                     tPila pila_mitad;
                     pila.divide(pila_mitad);
                     MPI_Send(pila_mitad.nodos, pila_mitad.tope, MPI_INT, idRequester, NODOS, comunicadorCarga);
+                    if (DEPURACION) { printf("Proceso[%d] envia trabajo a %d\n", idproc, idRequester); }
                     if (idproc < idRequester) {
                         color = NEGRO;
                     }
                 } else {
                     MPI_Send(&idRequester, 1, MPI_INT, siguiente, PETICION, comunicadorCarga);
+                    if (DEPURACION) { printf("Proceso[%d] reenvia peticion de trabajo de %d a %d\n", idproc, idRequester, siguiente); }
                 }
                 break;
             case TOKEN: // Token de control de fin
                 MPI_Recv(NULL, 0, MPI_INT, msgStatus.MPI_SOURCE, TOKEN, comunicadorCarga, &msgStatus);
+                if (DEPURACION) { printf("Proceso[%d] recibe token de fin de %d\n", idproc, msgStatus.MPI_SOURCE); }
                 token_presente = true;
                 break;
             }
