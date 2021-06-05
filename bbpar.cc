@@ -1,6 +1,14 @@
-/* ******************************************************************** */
-/*               Algoritmo Branch-And-Bound Secuencial                  */
-/* ******************************************************************** */
+/*
+ ============================================================================
+ Name        :	bbpar.cpp
+ Author      :	Jose Saldaña Mercado
+ Copyright   :	GNU Open Souce and Free license
+ Description : 	Resuelve el problema del viajante de comercio TSP (traveling 
+ 				salesman problem) mediante un algoritmo Branch-And-Bound 
+				Paralelo distribuido con MPI 
+ ============================================================================
+ */
+
 #include <cstdlib>
 #include <cstdio>
 #include <iostream>
@@ -10,26 +18,43 @@
 using namespace std;
 
 unsigned int NCIUDADES;
+bool DIFUSION;
 int rank, size;
 
 main(int argc, char **argv) {
-	MPI::Init(argc, argv);
 	switch (argc) {
-	case 3:
+	case 4:
 		NCIUDADES = atoi(argv[1]);
+		DIFUSION = atoi(argv[3]) == 1;
 		break;
 	default:
-		cerr << "La sintaxis es: bbseq <tama�o> <archivo>" << endl;
+		cerr << "La sintaxis es: bbseq <tamaño> <archivo> <difusion_cota_superior>" << endl;
 		exit(1);
 		break;
 	}
+
+	// MPI init
+	int next, prev;
+	MPI::Init(argc, argv);
+	MPI_Comm_size(MPI_COMM_WORLD, &size);
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+	next = (rank + 1) % size;
+	prev = (rank - 1 + size) % size;
+
+	// Inicialización de comunicadores
+	MPI_Comm comunicadorCota, comunicadorCarga;
+    MPI_Comm_split(MPI_COMM_WORLD, // a partir del comunicador global.
+        0, // Todos van al mismo comunicador
+        rank, // indica el orden de asignacion de rango dentro de los nuevos comunicadores
+        &comunicadorCarga); // Referencia al nuevo comunicador creado.
+	MPI_Comm_split(MPI_COMM_WORLD, 1, rank, &comunicadorCota);
 
 	int **tsp0 = reservarMatrizCuadrada(NCIUDADES);
 	tNodo nodo,	  // nodo a explorar
 		lnodo,	  // hijo izquierdo
 		rnodo,	  // hijo derecho
 		solucion; // mejor solucion
-	bool activo,  // condicion de fin
+	bool end,  // condicion de fin
 		nueva_U;  // hay nuevo valor de c.s.
 	int U;		  // valor de c.s.
 	int iteraciones = 0;
@@ -38,10 +63,24 @@ main(int argc, char **argv) {
 	U = INFINITO;	 // inicializa cota superior
 	InicNodo(&nodo); // inicializa estructura nodo
 
-	LeerMatriz(argv[2], tsp0); // lee matriz de fichero
-	activo = !Inconsistente(tsp0);
+	if (rank == 0) { // Solo proceso 0
+		LeerMatriz(argv[2], tsp0); // lee matriz de fichero
+		token_presente = true;
+	}
+	MPI_Bcast(&tsp0[0][0], NCIUDADES * NCIUDADES, 0, MPI_COMM_WORLD);
+	MPI_Barrier(MPI_COMM_WORLD);
+
 	double t = MPI::Wtime();
-	while (activo) { // ciclo del Branch&Bound
+
+	if (rank != 0) {
+		loadBalance(pila, end, solucion);
+		if (!end) {
+			pila.pop(nodo);
+		}
+	}
+	end = Inconsistente(tsp0);
+
+	while (!end) { // ciclo del Branch&Bound
 		Ramifica(&nodo, &lnodo, &rnodo, tsp0);
 		nueva_U = false;
 		if (Solucion(&rnodo)) {
@@ -50,8 +89,7 @@ main(int argc, char **argv) {
 				nueva_U = true;
 				CopiaNodo(&rnodo, &solucion);
 			}
-		}
-		else { //  no es un nodo solucion
+		} else { //  no es un nodo solucion
 			if (rnodo.ci() < U) { //  cota inferior menor que cota superior
 				if (!pila.push(rnodo)) {
 					printf("Error: pila agotada\n");
@@ -66,8 +104,7 @@ main(int argc, char **argv) {
 				nueva_U = true;
 				CopiaNodo(&lnodo, &solucion);
 			}
-		}
-		else { // no es nodo solucion
+		} else { // no es nodo solucion
 			if (lnodo.ci() < U) { // cota inferior menor que cota superior
 				if (!pila.push(lnodo)) {
 					printf("Error: pila agotada\n");
@@ -76,17 +113,43 @@ main(int argc, char **argv) {
 				}
 			}
 		}
-		if (nueva_U)
+
+		// Difusion cota superior
+		if (DIFUSION) {
+			uBroadcast(U, nueva_U);
+		}
+
+		if (nueva_U) {
 			pila.acotar(U);
-		activo = pila.pop(nodo);
+		}
+
+		loadBalance(pila, end, solucion);
+
+		if (!end) {
+			pila.pop(nodo);
+		}
+
 		iteraciones++;
 	}
+	MPI_Barrier(MPI_COMM_WORLD);
 	t = MPI::Wtime() - t;
-	MPI::Finalize();
-	printf("Solucion: \n");
-	EscribeNodo(&solucion);
-	cout << "Tiempo gastado= " << t << endl;
-	cout << "Numero de iteraciones = " << iteraciones << endl
-		 << endl;
+	MPI_Comm_free(&comunicadorCota);
+	MPI_Comm_free(&comunicadorCarga);
+
+	cout << "----- Proceso " << rank << ", " << iteraciones << " iteraciones realizadas -----" << endl;
+	int itTotal;
+	MPI_Reduce(&iteraciones, &itTotal, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+	MPI_Barrier(MPI_COMM_WORLD);
+
+	if (rank == 0) {
+		printf("Solucion: \n");
+		EscribeNodo(&solucion);
+		cout << "Tiempo gastado= " << t << endl;
+		cout << "Numero de iteraciones = " << itTotal << endl << endl;
+	}
+
+
 	liberarMatriz(tsp0);
+	MPI::Finalize();
+	return 0;
 }
