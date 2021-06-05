@@ -5,7 +5,7 @@
 #include <cstdio>
 #include <iostream>
 #include <mpi.h>
-#include "libbb.h"
+#include "libbbseq.h"
 
 using namespace std;
 

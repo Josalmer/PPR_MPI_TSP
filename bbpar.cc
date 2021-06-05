@@ -129,6 +129,7 @@ main(int argc, char **argv) {
 			pila.pop(nodo);
 		}
 
+		cout << "Proceso " << idproc << ", iteración " << iteraciones << endl;
 		iteraciones++;
 	}
 	MPI_Barrier(MPI_COMM_WORLD);
@@ -142,12 +143,16 @@ main(int argc, char **argv) {
 	MPI_Barrier(MPI_COMM_WORLD);
 
 	if (idproc == 0) {
-		printf("Solucion: \n");
+		cout << "Solucion";
+		if (DIFUSION) {
+			cout << " CON difusión:\n";
+		} else {
+			cout << " SIN difusión:\n";
+		}
 		EscribeNodo(&solucion);
 		cout << "Tiempo gastado= " << t << endl;
 		cout << "Numero de iteraciones = " << itTotal << endl << endl;
 	}
-
 
 	liberarMatriz(tsp0);
 	MPI::Finalize();
