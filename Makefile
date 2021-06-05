@@ -1,4 +1,4 @@
-all: bbpar bbseq
+all: bbpar bbseq cleanObj
 
 bbseq: bbseq.o libbbseq.o
 	mpicxx -O3 bbseq.o libbbseq.o -o bbseq
@@ -16,7 +16,10 @@ bbpar.o: bbpar.cc
 	mpicxx -O3 -c bbpar.cc
 
 libbb.o: libbb.cc libbb.h
-	mpicxx -O3 -c  libbb.cc 
+	mpicxx -O3 -c  libbb.cc
+
+cleanObj:
+	/bin/rm -f *.o
 
 clean:
 	/bin/rm -f *.o bbpar bbseq

@@ -39,7 +39,7 @@ extern int siguiente;             // Identificador del siguiente proceso
 bool difundir_cs_local;    // Indica si el proceso puede difundir su cota inferior local
 bool pendiente_retorno_cs; // Indica si el proceso est� esperando a recibir la cota inferior de otro proceso
 
-bool DEPURACION = true;
+bool DEPURACION = false;
 
 /* ********************************************************************* */
 /* *** Funciones para el algoritmo Paralelo con MPI *** */
@@ -111,8 +111,8 @@ void loadBalance(tPila &pila, bool &end, tNodo &solucion) {
                 }
                 break;
             case FIN: // Fin detectado
-                if (DEPURACION) { printf("Proceso[%d] recibe mensaje de fin de %d\n", idproc, anterior); }
                 MPI_Recv(candidato.datos, nNodos, MPI_INT, anterior, FIN, comunicadorCarga, &msgStatus);
+                if (DEPURACION) { printf("Proceso[%d] recibe mensaje de fin de %d\n", idproc, anterior); }
                 end = true;
                 if (candidato.ci() < solucion.ci()) {
                     CopiaNodo(&candidato, &solucion);

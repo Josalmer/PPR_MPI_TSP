@@ -54,8 +54,8 @@ main(int argc, char **argv) {
 		lnodo,	  // hijo izquierdo
 		rnodo,	  // hijo derecho
 		solucion; // mejor solucion
-	bool end,  // condicion de fin
-		nueva_U;  // hay nuevo valor de c.s.
+	bool end = false,  // condicion de fin
+		nueva_U = false;  // hay nuevo valor de c.s.
 	int U;		  // valor de c.s.
 	int iteraciones = 0;
 	tPila pila; // pila de nodos a explorar
@@ -137,7 +137,7 @@ main(int argc, char **argv) {
 	MPI_Comm_free(&comunicadorCarga);
 
 	cout << "----- Proceso " << idproc << ", " << iteraciones << " iteraciones realizadas -----" << endl;
-	int itTotal;
+	int itTotal = 0;
 	MPI_Reduce(&iteraciones, &itTotal, 1, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
 	MPI_Barrier(MPI_COMM_WORLD);
 
