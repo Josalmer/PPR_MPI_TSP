@@ -105,7 +105,14 @@ class tPila{
 };
 #endif
 
+/* ********************************************************************* */
+/* *** Cabeceras de funciones para el algoritmo Paralelo con MPI *** */
+/* ********************************************************************* */
 
+// Equilibrado de carga con detección de fin
+void loadBalance(tPila &pila, bool &end, tNodo &solucion);
+// Difusión de cota superior
+void uBroadcast(int &U, bool &nueva_U);
 
 /* ********************************************************************* */
 /* *** Cabeceras de funciones para el algoritmo de Branch-and-Bound *** */
